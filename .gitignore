@@ -1,0 +1,51 @@
+# --- App data & user content (never commit) ---
+# SQLite notes DB (local dev often uses DATA_DIR=./data)
+/data/
+/uploads/
+*.sqlite3
+*.sqlite
+*.db
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Frontend ---
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Logs & temp ---
+*.log
+.tmp/
+temp/
+
+# --- OS & editors ---
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Optional: large local caches (uncomment if you use these paths) ---
+# /models/
+# qdrant_storage/
