@@ -12,7 +12,7 @@ services:
       HMAC_SECRET: ${HMAC_SECRET:-}
       CHAT_MODEL: ${CHAT_MODEL:-gemma2:2b}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-notes}
     ports:
@@ -30,10 +30,10 @@ services:
       context: ./whisper
     command: >
       /bin/sh -lc "
-      test -f /models/ggml-${WHISPER_MODEL:-base.en}.bin ||
-      ./models/download-ggml-model.sh ${WHISPER_MODEL:-base.en} /models;
+      test -f /models/ggml-${WHISPER_MODEL:-small.en}.bin ||
+      ./models/download-ggml-model.sh ${WHISPER_MODEL:-small.en} /models;
       /opt/whisper.cpp/build/bin/whisper-server --host 0.0.0.0 --port 8080 --convert
-      -m /models/ggml-${WHISPER_MODEL:-base.en}.bin
+      -m /models/ggml-${WHISPER_MODEL:-small.en}.bin
       "
     volumes:
       - whisper_models:/models
@@ -41,7 +41,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     environment:
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
     volumes:
       - ollama_models:/root/.ollama

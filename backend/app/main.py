@@ -1,9 +1,9 @@
-import shutil
 import uuid
+import shutil
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +26,10 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     question: str
+
+
+class TextNoteRequest(BaseModel):
+    transcript: str
 
 
 class NoteUpdate(BaseModel):
@@ -56,16 +60,31 @@ async def health() -> dict[str, Any]:
 
 
 @app.post("/api/notes/audio")
-async def create_note_from_audio(file: UploadFile = File(...)) -> dict[str, Any]:
+async def create_note_from_audio(
+    file: UploadFile = File(...),
+    browser_transcript: str = Form(default=""),
+) -> dict[str, Any]:
     saved_path = save_upload(file)
-    job = await jobs.jobs.add_capture_audio(str(saved_path), saved_path.name)
+    job = await jobs.jobs.add_capture_audio(str(saved_path), saved_path.name, browser_transcript.strip())
+    return {"job_id": job.id, "state": job.state, "message": job.message}
+
+
+@app.post("/api/notes/text")
+async def create_note_from_text(request: TextNoteRequest) -> dict[str, Any]:
+    transcript = request.transcript.strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Transcript is required.")
+    job = await jobs.jobs.add_capture_text(transcript)
     return {"job_id": job.id, "state": job.state, "message": job.message}
 
 
 @app.post("/api/ask/audio")
-async def ask_from_audio(file: UploadFile = File(...)) -> dict[str, Any]:
+async def ask_from_audio(
+    file: UploadFile = File(...),
+    browser_transcript: str = Form(default=""),
+) -> dict[str, Any]:
     saved_path = save_upload(file)
-    job = await jobs.jobs.add_ask_audio(str(saved_path), saved_path.name)
+    job = await jobs.jobs.add_ask_audio(str(saved_path), saved_path.name, browser_transcript.strip())
     return {"job_id": job.id, "state": job.state, "message": job.message}
 
 
@@ -144,7 +163,8 @@ def save_upload(file: UploadFile) -> Path:
 
 static_dir = Path(__file__).resolve().parents[2] / "static"
 assets_dir = static_dir / "assets"
-app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+if assets_dir.is_dir():
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 
 @app.get("/")

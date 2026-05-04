@@ -31,14 +31,28 @@ class JobQueue:
             self.worker_started = True
             asyncio.create_task(self._worker())
 
-    async def add_capture_audio(self, path: str, filename: str) -> Job:
-        job = Job(id=str(uuid.uuid4()), kind="capture_audio", payload={"path": path, "filename": filename})
+    async def add_capture_audio(self, path: str, filename: str, browser_transcript: str = "") -> Job:
+        job = Job(
+            id=str(uuid.uuid4()),
+            kind="capture_audio",
+            payload={"path": path, "filename": filename, "browser_transcript": browser_transcript},
+        )
         self.jobs[job.id] = job
         await self.queue.put(job.id)
         return job
 
-    async def add_ask_audio(self, path: str, filename: str) -> Job:
-        job = Job(id=str(uuid.uuid4()), kind="ask_audio", payload={"path": path, "filename": filename})
+    async def add_ask_audio(self, path: str, filename: str, browser_transcript: str = "") -> Job:
+        job = Job(
+            id=str(uuid.uuid4()),
+            kind="ask_audio",
+            payload={"path": path, "filename": filename, "browser_transcript": browser_transcript},
+        )
+        self.jobs[job.id] = job
+        await self.queue.put(job.id)
+        return job
+
+    async def add_capture_text(self, transcript: str) -> Job:
+        job = Job(id=str(uuid.uuid4()), kind="capture_text", payload={"transcript": transcript})
         self.jobs[job.id] = job
         await self.queue.put(job.id)
         return job
@@ -55,6 +69,8 @@ class JobQueue:
             try:
                 if job.kind == "capture_audio":
                     await self._process_capture_audio(job)
+                elif job.kind == "capture_text":
+                    await self._process_capture_text(job)
                 elif job.kind == "ask_audio":
                     await self._process_ask_audio(job)
             except Exception as exc:
@@ -65,12 +81,47 @@ class JobQueue:
                 self.queue.task_done()
 
     async def _process_capture_audio(self, job: Job) -> None:
-        job.state = "transcribing"
-        job.message = "Transcribing audio"
-        transcript = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
-        if not transcript:
-            raise ValueError("Whisper returned an empty transcript.")
+        browser_hint = str(job.payload.get("browser_transcript") or "").strip()
 
+        if len(browser_hint) >= 12:
+            transcript = browser_hint
+        else:
+            job.state = "transcribing"
+            job.message = "Transcribing audio"
+            whisper_text = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
+            if not whisper_text:
+                raise ValueError("Whisper returned an empty transcript.")
+            transcript = whisper_text
+
+        await self._analyze_and_store_note(job, transcript, audio_filename=job.payload["filename"])
+
+    async def _process_capture_text(self, job: Job) -> None:
+        transcript = str(job.payload["transcript"]).strip()
+        if not transcript:
+            raise ValueError("Transcript is required.")
+        await self._analyze_and_store_note(job, transcript, audio_filename=None)
+
+    async def _process_ask_audio(self, job: Job) -> None:
+        browser_hint = str(job.payload.get("browser_transcript") or "").strip()
+
+        if len(browser_hint) >= 8:
+            question = browser_hint
+        else:
+            job.state = "transcribing"
+            job.message = "Transcribing question"
+            whisper_q = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
+            if not whisper_q:
+                raise ValueError("Whisper returned an empty question.")
+            question = whisper_q
+
+        job.state = "answering"
+        job.message = "Searching memory"
+        result = await answer_question(question)
+        job.state = "stored"
+        job.message = "Answered"
+        job.result = result
+
+    async def _analyze_and_store_note(self, job: Job, transcript: str, audio_filename: str | None) -> None:
         job.state = "analyzing"
         job.message = "Creating note"
         details = await ai.analyze_note(transcript)
@@ -89,7 +140,7 @@ class JobQueue:
             "action_items": details["action_items"],
             "entities": details["entities"],
             "sensitivity": details["sensitivity"],
-            "audio_filename": job.payload["filename"],
+            "audio_filename": audio_filename,
             "vector_id": vector_id,
         }
         database.save_note(note)
@@ -105,29 +156,29 @@ class JobQueue:
         job.message = "Saved"
         job.result = {"note": saved_note}
 
-    async def _process_ask_audio(self, job: Job) -> None:
-        job.state = "transcribing"
-        job.message = "Transcribing question"
-        question = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
-        if not question:
-            raise ValueError("Whisper returned an empty question.")
-
-        job.state = "answering"
-        job.message = "Searching memory"
-        result = await answer_question(question)
-        job.state = "stored"
-        job.message = "Answered"
-        job.result = result
-
 
 async def answer_question(question: str) -> dict[str, Any]:
     vector = await ai.embed_text(question)
-    note_ids = await vector_store.search_notes(vector)
+    ranked = await vector_store.search_notes_scored(vector, limit=12)
+    note_ids = vector_store.narrow_search_results(ranked, max_notes=5)
     notes = database.get_notes_by_ids(note_ids)
-    answer = await ai.answer_question(question, notes)
+    answer, source_indices = await ai.answer_question_from_notes(question, notes)
+    cited: list[dict[str, Any]] = []
+    for idx in source_indices:
+        if 1 <= idx <= len(notes):
+            cited.append(notes[idx - 1])
+
+    dedup_seen: set[str] = set()
+    sources: list[dict[str, Any]] = []
+    for note in cited:
+        nid = str(note["id"])
+        if nid not in dedup_seen:
+            dedup_seen.add(nid)
+            sources.append(note)
+
     question_id = str(uuid.uuid4())
-    database.save_question(question_id, question, answer, [note["id"] for note in notes])
-    return {"question": question, "answer": answer, "sources": notes}
+    database.save_question(question_id, question, answer, [note["id"] for note in sources])
+    return {"question": question, "answer": answer, "sources": sources}
 
 
 def build_vector_text(note: dict[str, Any]) -> str:
@@ -136,6 +187,7 @@ def build_vector_text(note: dict[str, Any]) -> str:
             note["title"],
             note["summary"],
             "Key points: " + "; ".join(note.get("key_points", [])),
+            "Action items: " + "; ".join(note.get("action_items", [])),
             "Entities: " + "; ".join(note.get("entities", [])),
             "Transcript: " + note["transcript"][:2000],
         ]

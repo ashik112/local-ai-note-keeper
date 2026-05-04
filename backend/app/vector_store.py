@@ -49,7 +49,8 @@ async def upsert_note_vector(note: dict[str, Any], vector: list[float]) -> None:
         response.raise_for_status()
 
 
-async def search_notes(vector: list[float], limit: int = 6) -> list[str]:
+async def search_notes_scored(vector: list[float], limit: int = 12) -> list[tuple[str, float]]:
+    """Return note ids sorted by descending vector similarity."""
     await ensure_collection(len(vector))
 
     async with httpx.AsyncClient(timeout=60) as client:
@@ -63,12 +64,45 @@ async def search_notes(vector: list[float], limit: int = 6) -> list[str]:
 
     response.raise_for_status()
     result = response.json().get("result", [])
-    note_ids: list[str] = []
+    ranked: list[tuple[str, float]] = []
+    seen: set[str] = set()
     for item in result:
         note_id = item.get("payload", {}).get("note_id")
-        if note_id:
-            note_ids.append(str(note_id))
-    return note_ids
+        if not note_id:
+            continue
+        nid = str(note_id)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        score = float(item.get("score", 0))
+        ranked.append((nid, score))
+
+    ranked.sort(key=lambda x: x[1], reverse=True)
+    return ranked
+
+
+def narrow_search_results(
+    ranked: list[tuple[str, float]], *, max_notes: int = 5, similarity_floor_ratio: float = 0.86
+) -> list[str]:
+    """Keep top hits that stay close to the best score — drops weak vector matches."""
+    if not ranked:
+        return []
+
+    top_score = max(ranked[0][1], 1e-9)
+    min_score = max(top_score * similarity_floor_ratio, 0.08)
+    out: list[str] = []
+
+    for note_id, score in ranked:
+        if score < min_score and out:
+            break
+        if score < min_score and not out:
+            out.append(note_id)
+            continue
+        out.append(note_id)
+        if len(out) >= max_notes:
+            break
+
+    return out if out else [ranked[0][0]]
 
 
 async def delete_note_vector(vector_id: str | None) -> None:

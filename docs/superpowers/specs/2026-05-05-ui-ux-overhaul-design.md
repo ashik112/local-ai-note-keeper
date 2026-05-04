@@ -3,6 +3,12 @@
 **Date:** 2026-05-05  
 **Status:** Approved
 
+## Implementation Note
+
+The shipped implementation keeps the same user flow described in this plan, but uses a compatibility path for live transcription: the browser streams PCM audio chunks to `WS /api/ws/transcribe`, and the backend periodically sends the buffered audio to Whisper's `/inference` endpoint for a live transcript preview.
+
+This is because the current Dockerized `whisper-server` exposes `/inference` but does not expose `/stream`. The frontend still gets live text while recording, and `POST /api/notes/text` still skips the full audio re-transcription step when live text is available. `MediaRecorder` remains active as the fallback path.
+
 ## Goals
 
 1. Live transcription text display while recording (Approach 3 — whisper WebSocket streaming)
