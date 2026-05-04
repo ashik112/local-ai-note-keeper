@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 from . import ai, database, vector_store
@@ -81,6 +82,13 @@ class JobQueue:
                 self.queue.task_done()
 
     async def _process_capture_audio(self, job: Job) -> None:
+        path = Path(job.payload["path"])
+        try:
+            await self._process_capture_audio_file(job, path)
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def _process_capture_audio_file(self, job: Job, path: Path) -> None:
         browser_hint = str(job.payload.get("browser_transcript") or "").strip()
 
         if len(browser_hint) >= 12:
@@ -88,7 +96,7 @@ class JobQueue:
         else:
             job.state = "transcribing"
             job.message = "Transcribing audio"
-            whisper_text = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
+            whisper_text = await ai.transcribe_audio(str(path), job.payload["filename"])
             if not whisper_text:
                 raise ValueError("Whisper returned an empty transcript.")
             transcript = whisper_text
@@ -102,6 +110,13 @@ class JobQueue:
         await self._analyze_and_store_note(job, transcript, audio_filename=None)
 
     async def _process_ask_audio(self, job: Job) -> None:
+        path = Path(job.payload["path"])
+        try:
+            await self._process_ask_audio_file(job, path)
+        finally:
+            path.unlink(missing_ok=True)
+
+    async def _process_ask_audio_file(self, job: Job, path: Path) -> None:
         browser_hint = str(job.payload.get("browser_transcript") or "").strip()
 
         if len(browser_hint) >= 8:
@@ -109,7 +124,7 @@ class JobQueue:
         else:
             job.state = "transcribing"
             job.message = "Transcribing question"
-            whisper_q = await ai.transcribe_audio(job.payload["path"], job.payload["filename"])
+            whisper_q = await ai.transcribe_audio(str(path), job.payload["filename"])
             if not whisper_q:
                 raise ValueError("Whisper returned an empty question.")
             question = whisper_q

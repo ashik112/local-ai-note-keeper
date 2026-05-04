@@ -1,5 +1,6 @@
 import uuid
 import shutil
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +12,18 @@ from pydantic import BaseModel
 
 from . import database, jobs, vector_store
 from .config import settings
+from .http_client import close_http_client
 
 
-app = FastAPI(title=settings.app_name)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    database.prepare_database()
+    jobs.jobs.start()
+    yield
+    await close_http_client()
+
+
+app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -40,12 +50,6 @@ class NoteUpdate(BaseModel):
     action_items: list[str] | None = None
     entities: list[str] | None = None
     sensitivity: str | None = None
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    database.prepare_database()
-    jobs.jobs.start()
 
 
 @app.get("/api/health")

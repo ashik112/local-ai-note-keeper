@@ -1,23 +1,22 @@
 from typing import Any
 
-import httpx
-
 from .config import settings
+from .http_client import get_http_client
 
 
 async def ensure_collection(vector_size: int) -> None:
     # The embedding size comes from the selected Ollama model, so the collection
     # is created after the first embedding instead of hard-coding dimensions.
-    async with httpx.AsyncClient(timeout=60) as client:
-        existing = await client.get(f"{settings.qdrant_url}/collections/{settings.collection_name}")
-        if existing.status_code == 200:
-            return
+    client = get_http_client()
+    existing = await client.get(f"{settings.qdrant_url}/collections/{settings.collection_name}")
+    if existing.status_code == 200:
+        return
 
-        response = await client.put(
-            f"{settings.qdrant_url}/collections/{settings.collection_name}",
-            json={"vectors": {"size": vector_size, "distance": "Cosine"}},
-        )
-        response.raise_for_status()
+    response = await client.put(
+        f"{settings.qdrant_url}/collections/{settings.collection_name}",
+        json={"vectors": {"size": vector_size, "distance": "Cosine"}},
+    )
+    response.raise_for_status()
 
 
 async def upsert_note_vector(note: dict[str, Any], vector: list[float]) -> None:
@@ -41,23 +40,23 @@ async def upsert_note_vector(note: dict[str, Any], vector: list[float]) -> None:
         ]
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.put(
-            f"{settings.qdrant_url}/collections/{settings.collection_name}/points",
-            json=payload,
-        )
-        response.raise_for_status()
+    client = get_http_client()
+    response = await client.put(
+        f"{settings.qdrant_url}/collections/{settings.collection_name}/points",
+        json=payload,
+    )
+    response.raise_for_status()
 
 
 async def search_notes_scored(vector: list[float], limit: int = 12) -> list[tuple[str, float]]:
     """Return note ids sorted by descending vector similarity."""
     await ensure_collection(len(vector))
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        response = await client.post(
-            f"{settings.qdrant_url}/collections/{settings.collection_name}/points/search",
-            json={"vector": vector, "limit": limit, "with_payload": True},
-        )
+    client = get_http_client()
+    response = await client.post(
+        f"{settings.qdrant_url}/collections/{settings.collection_name}/points/search",
+        json={"vector": vector, "limit": limit, "with_payload": True},
+    )
 
     if response.status_code == 404:
         return []
@@ -109,8 +108,8 @@ async def delete_note_vector(vector_id: str | None) -> None:
     if not vector_id:
         return
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        await client.post(
-            f"{settings.qdrant_url}/collections/{settings.collection_name}/points/delete",
-            json={"points": [vector_id]},
-        )
+    client = get_http_client()
+    await client.post(
+        f"{settings.qdrant_url}/collections/{settings.collection_name}/points/delete",
+        json={"points": [vector_id]},
+    )

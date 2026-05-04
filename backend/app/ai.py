@@ -1,9 +1,8 @@
 import json
 from typing import Any
 
-import httpx
-
 from .config import settings
+from .http_client import get_http_client
 
 
 CATEGORIES = {
@@ -32,18 +31,18 @@ def normalize_category(value: str | None) -> str:
 
 
 async def transcribe_audio(path: str, filename: str) -> str:
-    async with httpx.AsyncClient(timeout=600) as client:
-        with open(path, "rb") as audio_file:
-            response = await client.post(
-                f"{settings.whisper_url}/inference",
-                files={"file": (filename, audio_file, "application/octet-stream")},
-                data={
-                    "temperature": "0.0",
-                    "temperature_inc": "0.2",
-                    "response_format": "json",
-                },
-            )
-        response.raise_for_status()
+    client = get_http_client()
+    with open(path, "rb") as audio_file:
+        response = await client.post(
+            f"{settings.whisper_url}/inference",
+            files={"file": (filename, audio_file, "application/octet-stream")},
+            data={
+                "temperature": "0.0",
+                "temperature_inc": "0.2",
+                "response_format": "json",
+            },
+        )
+    response.raise_for_status()
 
     payload = response.json()
     return str(payload.get("text", "")).strip()
@@ -194,21 +193,21 @@ async def chat_text(prompt: str, json_mode: bool = False) -> str:
     if json_mode:
         payload["format"] = "json"
 
-    async with httpx.AsyncClient(timeout=600) as client:
-        response = await client.post(f"{settings.ollama_url}/api/chat", json=payload)
-        response.raise_for_status()
+    client = get_http_client()
+    response = await client.post(f"{settings.ollama_url}/api/chat", json=payload)
+    response.raise_for_status()
 
     data = response.json()
     return str(data.get("message", {}).get("content", "")).strip()
 
 
 async def embed_text(text: str) -> list[float]:
-    async with httpx.AsyncClient(timeout=120) as client:
-        response = await client.post(
-            f"{settings.ollama_url}/api/embeddings",
-            json={"model": settings.embedding_model, "prompt": text},
-        )
-        response.raise_for_status()
+    client = get_http_client()
+    response = await client.post(
+        f"{settings.ollama_url}/api/embeddings",
+        json={"model": settings.embedding_model, "prompt": text},
+    )
+    response.raise_for_status()
 
     data = response.json()
     embedding = data.get("embedding")

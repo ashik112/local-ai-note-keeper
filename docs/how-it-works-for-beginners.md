@@ -27,12 +27,18 @@ This is the page you open at:
 http://127.0.0.1:3000
 ```
 
-It lets you:
+(When you run the stack with Docker Compose, the app maps that address to the backend, which serves the built frontend.)
 
-- record a note
-- ask a question
-- see stored notes
-- inspect summaries, key points, action items, and transcripts
+The screen is organized into three main areas in the bottom navigation:
+
+- **Notes** — search and filter your saved notes, open a note to read the brief, extracts, and full transcript.
+- **Capture** — record voice to create a new note. You see status (Listening, Uploading, and so on) and an optional **live preview** of what the browser thinks you said. This tab does **not** show the typed question box or the Ask-style answer panel; those belong on **Ask** only.
+- **Ask** — type a question or use the mic to ask about notes you already saved. You see the composer, the answer, and source notes when the model uses them.
+
+Other UI details you might notice:
+
+- **Auto-stop after silence** — optional setting on Capture and Ask that stops recording after about five seconds of quiet (after you have already spoken), so you do not have to tap stop every time.
+- **Category filter** — on Notes, a pill control filters the list by category.
 
 The frontend is built with React and Vite. React helps build the interactive screen. Vite builds the frontend files quickly.
 
@@ -48,18 +54,24 @@ These libraries are used so the app feels like a real product without building e
 
 The backend is the coordinator.
 
-It receives audio and text from the browser, sends audio to Whisper for transcription, sends text to Ollama for AI work, saves notes in SQLite, and stores searchable memory in Qdrant.
+It receives audio and text from the browser, sends audio to Whisper when needed, sends text to Ollama for AI work, saves notes in SQLite, and stores searchable memory in Qdrant.
 
 The backend is written with FastAPI because it is simple, readable, and good for APIs.
 
-The backend exposes a few important routes:
+The backend exposes important routes such as:
 
-- `POST /api/notes/audio`: save a note from recorded audio
-- `POST /api/notes/text`: save a note from already-transcribed text
-- `POST /api/ask/text`: ask a question using typed text
-- `POST /api/ask/audio`: ask a question using recorded audio
-- `GET /api/notes`: show saved notes
-- `WS /api/ws/transcribe`: send live microphone audio and receive live text previews
+- `POST /api/notes/audio` — save a note from recorded audio (returns a `job_id` to poll)
+- `POST /api/notes/text` — save a note from text you already have (also returns a `job_id`)
+- `POST /api/ask` — ask a question with **typed** text (returns the answer directly in one response)
+- `POST /api/ask/audio` — ask a question with **recorded** audio (returns a `job_id`)
+- `GET /api/jobs/{job_id}` — check progress of a queued job (transcription, note creation, or voice ask)
+- `GET /api/notes` — list notes (supports `category` and `q` query parameters)
+- `GET /api/notes/{note_id}` — fetch one note
+- `PATCH /api/notes/{note_id}` — update fields like title or category
+- `DELETE /api/notes/{note_id}` — delete a note and try to remove its vector from Qdrant
+- `GET /api/health` — simple status and which models are configured
+
+There is **no** live WebSocket transcription endpoint in the current backend. Live text on the screen comes from the **browser’s** speech preview, not from streaming chunks to Whisper.
 
 ### Whisper
 
@@ -71,7 +83,7 @@ It answers this question:
 What did the user say in the recording?
 ```
 
-In this project, Whisper runs through `whisper.cpp` inside Docker.
+In this project, Whisper runs through `whisper.cpp` inside Docker and exposes an HTTP `/inference` endpoint that the backend calls with the uploaded audio file.
 
 Why `whisper.cpp`?
 
@@ -80,30 +92,31 @@ Why `whisper.cpp`?
 - It can run without cloud services.
 - It is a good fit for a private local app.
 
-Default model:
+Default model in Docker Compose:
 
 ```text
 small.en
 ```
 
+(You can change this with `WHISPER_MODEL` when building or running the Whisper service.)
+
 Why `small.en`?
 
 - It is more accurate than `base.en`.
 - It is still small enough for a laptop.
-- The app now starts transcription while you are still talking, so the slower model hurts less.
+- It is a reasonable default for English-focused use.
 
-Important detail:
+#### Browser preview vs Whisper
 
-The current Dockerized Whisper server supports normal audio transcription through `/inference`. It does not expose a true `/stream` endpoint in this setup.
+While you record, the app can show **live preview** text using the browser’s **Web Speech API** (where the browser supports it). That text is a **hint** for you on screen. It is **not** the same engine as Whisper.
 
-So the app uses a practical live preview approach:
+When you stop recording:
 
-1. The browser sends small audio chunks to the backend over a WebSocket.
-2. The backend keeps a short growing audio buffer.
-3. Every few seconds, the backend asks Whisper to transcribe the current buffer.
-4. The backend sends the latest transcript back to the browser.
+1. The browser uploads the recorded audio to the backend (as a normal file upload).
+2. The browser can also send the preview text as a form field called `browser_transcript`.
+3. If that hint is long enough, the backend may **skip Whisper** and use the hint as the transcript (this saves time and compute). If the hint is short or empty, the backend runs **Whisper inference** on the uploaded file.
 
-This gives you live text while recording, even though the underlying Whisper container is still using normal transcription requests.
+After the job finishes, the backend **deletes the uploaded audio file** from disk so recordings do not pile up forever in the uploads folder.
 
 ### Ollama
 
@@ -111,10 +124,31 @@ Ollama runs local AI models.
 
 In this app, Ollama does two jobs:
 
-- chat/reasoning with `gemma2:2b`
-- embeddings with `nomic-embed-text`
+- chat/reasoning with `gemma2:2b` (configurable)
+- embeddings with `nomic-embed-text` (configurable)
 
 Think of Ollama as the local AI engine.
+
+### What "Inference" Means (and "Interference")
+
+People sometimes mix up **inference** with **interference**. They sound similar but mean different things.
+
+**Inference** (this app does a lot of it):
+
+- Inference means: **use a trained model to produce an output from new input**.
+- Examples in this project:
+  - Whisper **infers** text from your audio.
+  - The chat model **infers** a title, summary, categories, and answers from text you give it.
+  - The embedding model **infers** a vector of numbers from a sentence.
+
+You can think of training as "teaching the model once." Inference is "asking the already-trained model a question" many times as you use the app.
+
+**Interference** (not what the AI steps are called):
+
+- Interference usually means signals getting in each other’s way (for example radio noise) or two processes clashing.
+- That is a normal English word, but it is **not** the standard name for "running the model."
+
+So when docs say Whisper or Ollama is doing inference, they mean **running the AI model**, not electromagnetic interference.
 
 ### Chat Model
 
@@ -124,7 +158,7 @@ In this app, the chat model:
 
 - creates a title
 - summarizes the note
-- chooses a category
+- chooses a category (with rules so simple errands like buying a ticket are more likely labeled **Task** than **Project**, and similar disambiguation)
 - extracts key points
 - extracts action items
 - answers questions from stored notes
@@ -141,15 +175,13 @@ Why this model?
 - It is good enough for note cleanup and simple reasoning.
 - It keeps the first version practical on a laptop.
 
-The app keeps the model warm for a short time after it answers.
-
-Current setting:
+The app can ask Ollama to **keep models loaded** for a short time after use so repeated captures feel snappier. The exact value comes from the environment:
 
 ```text
-OLLAMA_KEEP_ALIVE=10m
+OLLAMA_KEEP_ALIVE
 ```
 
-That means Ollama can keep the model loaded for about 10 minutes after use. This uses more memory while active, but it avoids repeated cold starts when you are capturing several notes in a row.
+In `docker-compose.yml` this is often set to `10m`. If you run the backend without that override, the code default may be shorter (`1m`). Either way: higher values use more RAM while idle but reduce cold-start delay.
 
 ### Embedding Model
 
@@ -190,7 +222,7 @@ Why this model?
 - It is made for turning text into searchable vectors.
 - It keeps the system Docker-friendly.
 
-The embedding model does not write summaries or answer questions. Its job is only to convert text into a meaning-based number format for search.
+The embedding model does not write summaries or answer questions by itself in the conversational sense. Its main job here is **inference**: convert text into vectors for similarity search.
 
 ### Vector Database
 
@@ -207,10 +239,10 @@ Which old notes are closest in meaning to this new question?
 Example:
 
 1. You ask: "What is my ID number?"
-2. The app turns that question into numbers using the embedding model.
+2. The app turns that question into numbers using the embedding model (embedding **inference**).
 3. Qdrant compares those numbers against saved note numbers.
 4. Qdrant returns the most related notes.
-5. The chat model uses those notes to answer.
+5. The chat model uses those notes to answer (chat **inference**).
 
 Why Qdrant?
 
@@ -229,6 +261,7 @@ SQLite stores the normal note data:
 - key points
 - action items
 - created date
+- and other fields like sensitivity and links to vectors
 
 Why SQLite?
 
@@ -239,50 +272,55 @@ Why SQLite?
 
 SQLite stores the full note. Qdrant stores the meaning-search version.
 
-## What Happens When You Save A Voice Note
+## What Happens When You Save A Voice Note (Capture)
 
 Here is the current full flow:
 
 1. Browser asks for microphone access.
-2. Browser starts recording with `MediaRecorder` as a safe backup.
-3. Browser also sends live audio chunks to `WS /api/ws/transcribe`.
-4. Backend sends those chunks to Whisper in short snapshots.
-5. UI shows a live transcript while you are talking.
-6. When you stop, the browser checks if the live transcript is usable.
-7. If live text exists, browser sends it to `POST /api/notes/text`.
-8. If live text failed or is empty, browser uploads the recorded audio to `POST /api/notes/audio`.
-9. Backend puts the job in a queue.
-10. Ollama summarizes and categorizes the text.
-11. Ollama embedding model turns the note into numbers.
-12. SQLite saves the real note.
-13. Qdrant saves the vector for memory search.
-14. The UI shows the saved note.
+2. Browser records with `MediaRecorder` into a short audio file (for example WebM).
+3. While recording, the browser may run **Web Speech API** preview and show text on screen. That is optional and depends on the browser.
+4. When you stop, the browser uploads the audio to `POST /api/notes/audio`. It can attach `browser_transcript` from the preview when it is available.
+5. Backend saves the file temporarily, creates a **job**, and returns `job_id`.
+6. The single worker picks up the job.
+7. If `browser_transcript` is long enough, the worker uses it as the transcript and **skips Whisper**. Otherwise the worker calls Whisper `/inference` on the file.
+8. Worker sets state to **analyzing** and asks the **chat model** to structure the note (title, summary, category, and so on).
+9. Worker sets state to **embedding** and runs the **embedding model** on a text bundle built from the note.
+10. SQLite saves the note. Qdrant stores the vector.
+11. Worker marks the job **stored** and **deletes the temporary upload file**.
+12. The UI polls `GET /api/jobs/{job_id}` until the job finishes, then refreshes the note list.
 
-This is why stopping a recording should feel faster now. Most transcription work already happened while you were talking.
+So: Whisper may not run at all if the browser preview text was good enough. If Whisper runs, that step is **batch inference** on the whole clip, not word-by-word streaming.
 
-## Why There Is A Fallback Recording
+## Why There Is Still A Recorded File
 
-Live transcription depends on browser audio, a WebSocket, the backend, and Whisper all working together.
+Live preview depends on the browser and the Web Speech API.
 
-If any part of the live path fails, the app still has the normal recorded audio from `MediaRecorder`.
+Whisper depends on Docker and the Whisper service.
 
-That means:
+If preview fails or is too short, the backend still has the **uploaded recording** to transcribe with Whisper.
 
-- best case: live transcript is used, and saving is faster
-- fallback case: audio is uploaded after stop, and the note still saves
+If preview works well, you get faster saves because Whisper can be skipped.
 
-The user experience should not break just because live preview failed.
+The user experience should not break just because preview failed.
 
 ## What Happens When You Ask A Question
 
-Here is the full flow:
+There are two paths.
 
-1. You ask a question.
-2. Ollama embedding model turns the question into numbers.
-3. Qdrant finds related old notes.
-4. Backend loads those full notes from SQLite.
-5. Ollama chat model answers using those notes.
-6. UI shows the answer and the source notes.
+### Typed question (`POST /api/ask`)
+
+1. You type a question and submit.
+2. Backend embeds the question, searches Qdrant, loads top notes from SQLite.
+3. Chat model answers using only those notes.
+4. Response returns immediately with `answer` and `sources` (no job polling on this path).
+
+### Voice question (`POST /api/ask/audio`)
+
+1. Same recording and preview pattern as Capture.
+2. Job is created; browser polls job status.
+3. Short browser hint can skip Whisper for the **question**; otherwise Whisper transcribes the clip.
+4. Then the same search + answer steps run as for a typed question.
+5. Result is attached to the job when state is **stored**.
 
 Example:
 
@@ -319,27 +357,29 @@ Examples:
 
 The color does not change the AI logic. It only helps you scan your notes faster.
 
+The prompt also nudges the model so **Task** fits one-off errands (buy a ticket, book something) and **Project** fits bigger multi-step work, because users expect those labels to feel sensible in daily life.
+
 ## Why There Is A Queue
 
 AI work can be heavy.
 
 Whisper and Ollama can both use a lot of CPU/RAM. If the app tried to process many recordings at once, your laptop could get slow.
 
-So the backend processes AI jobs one at a time.
+So the backend processes **audio and long-running note jobs** one at a time for those job types.
 
 This is slower for bulk uploads, but better for a MacBook-style local app.
 
 The queue also gives each job a clear status:
 
 - `queued`: waiting
-- `transcribing`: turning audio into text
+- `transcribing`: turning audio into text (or using a long browser hint instead)
 - `analyzing`: summarizing and categorizing
 - `embedding`: creating the memory-search vector
 - `stored`: saved successfully
-- `answering`: answering a question
+- `answering`: working on a voice question
 - `failed`: something went wrong
 
-The frontend checks job status often so the screen can update quickly.
+The frontend polls `GET /api/jobs/{job_id}` on a short interval so the screen can update while the worker runs.
 
 ## Why Docker
 
@@ -368,9 +408,11 @@ In this app, Docker starts:
 
 The frontend is built into static files and served by the FastAPI app, so you only open one local URL.
 
+Persistent data uses Docker volumes (for example app data, uploads, and model caches).
+
 ## Why Only The App Port Is Exposed
 
-Only this URL is exposed to your Mac:
+Only this URL is exposed to your Mac by default:
 
 ```text
 http://127.0.0.1:3000
@@ -397,7 +439,7 @@ It does not mean "zero resource usage." While Docker services are running, they 
 
 It also does not mean "ready for the public internet." Right now the app is intended for local use on your own machine.
 
-If external access is added later, the app should use the HMAC keys from the env setup so outside requests can be verified before they reach private notes.
+If external access is added later, the app should use proper authentication and any shared secrets from the env setup so outside requests cannot freely read private notes.
 
 ## Important Limitation
 
@@ -407,18 +449,20 @@ On Apple Silicon, Dockerized Whisper may not use the best Mac-native acceleratio
 
 For now, Docker keeps setup simpler.
 
-Another limitation: the current live transcript is a preview. Because Whisper is being called with growing audio snapshots, the text may update or change as you keep speaking. The final saved note still goes through Ollama cleanup before being stored.
+Another limitation: the **live preview** is browser speech recognition when available. It can differ from Whisper’s transcript. The saved note always goes through the backend path (hint or Whisper) and then the chat model’s cleanup, so the stored version is the one the pipeline decided to use.
 
 ## Mental Model
 
 Think of the app like this:
 
-- Browser: microphone and screen
-- Backend: manager
-- Whisper: ears
+- Browser: microphone, optional live preview, and screen
+- Backend: manager, job queue, and file handling
+- Whisper: ears when you need cloud-grade transcription from the audio file
 - Chat model: writer and reasoner
-- Embedding model: meaning converter
+- Embedding model: meaning converter for search
 - Qdrant: memory index
 - SQLite: notebook
 
 The backend ties them together.
+
+Together, **inference** is just: each of those models **running on your inputs** to produce text, structure, or vectors — step by step, mostly on your own machine.

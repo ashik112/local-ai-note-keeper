@@ -143,11 +143,12 @@ def get_notes_by_ids(note_ids: list[str]) -> list[dict[str, Any]]:
     if not note_ids:
         return []
 
+    order = {nid: i for i, nid in enumerate(note_ids)}
     placeholders = ",".join("?" for _ in note_ids)
     with connect() as db:
         rows = db.execute(f"SELECT * FROM notes WHERE id IN ({placeholders})", note_ids).fetchall()
         notes = [row_to_note(row) for row in rows]
-        return sorted(notes, key=lambda note: note_ids.index(note["id"]))
+        return sorted(notes, key=lambda note: order.get(note["id"], len(note_ids)))
 
 
 def update_note(note_id: str, changes: dict[str, Any]) -> dict[str, Any] | None:
