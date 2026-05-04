@@ -137,7 +137,7 @@ export function AssistantDeck(props: AssistantDeckProps) {
 
   if (mode === "ask") {
     return (
-      <div className="flex min-h-0 flex-1 flex-col px-safe pb-24 pt-safe">
+      <div className="flex min-h-0 flex-1 flex-col px-safe pb-3 pt-safe">
         <HealthPill health={health} />
 
         {hero}
@@ -218,7 +218,7 @@ export function AssistantDeck(props: AssistantDeckProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col px-safe pb-24 pt-safe">
+    <div className="flex min-h-0 flex-1 flex-col px-safe pb-3 pt-safe">
       <HealthPill health={health} />
 
       {hero}

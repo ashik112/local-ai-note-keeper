@@ -336,15 +336,17 @@ export default function App() {
   const navHidden = shell === "memory" && detailOpen;
 
   return (
-    <div className="relative flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-background font-sans text-foreground antialiased">
+    <div className="relative min-h-[100dvh] w-full bg-background font-sans text-foreground antialiased">
       <div className="app-canvas">
         <div className="app-canvas__bloom" />
         <div className="app-canvas__mesh" />
         <div className="app-canvas__noise" />
       </div>
 
-      <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-        <AnimatePresence mode="popLayout">
+      {/* Phone-width shell on desktop; full bleed on narrow viewports */}
+      <div className="relative z-10 mx-auto flex h-[100dvh] max-h-[100dvh] w-full max-w-md flex-col overflow-hidden sm:border-x sm:border-white/[0.06] sm:shadow-[0_0_80px_rgba(0,0,0,0.5)]">
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <AnimatePresence mode="popLayout">
           {shell === "memory" && !detailOpen && (
             <motion.div
               key="mem"
@@ -418,10 +420,11 @@ export default function App() {
               />
             </motion.div>
           )}
-        </AnimatePresence>
-      </div>
+          </AnimatePresence>
+        </div>
 
-      {!navHidden && <FloatingDock shell={shell} onChange={setShell} />}
+        {!navHidden && <FloatingDock shell={shell} onChange={setShell} />}
+      </div>
     </div>
   );
 }

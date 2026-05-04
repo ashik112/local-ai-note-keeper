@@ -6,8 +6,8 @@ import type { Shell } from "./types";
 
 export function FloatingDock({ shell, onChange }: { shell: Shell; onChange: (s: Shell) => void }) {
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 px-safe pb-safe pt-2">
-      <div className="mx-auto grid w-full max-w-lg grid-cols-3 gap-1 rounded-[1.5rem] border border-white/[0.07] bg-slate-950/55 p-1.5 shadow-[0_-20px_56px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl">
+    <nav className="relative z-40 shrink-0 px-safe pb-safe pt-2">
+      <div className="grid w-full grid-cols-3 gap-1 rounded-[1.5rem] border border-white/[0.07] bg-slate-950/55 p-1.5 shadow-[0_-12px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl">
         <DockSlot
           active={shell === "memory"}
           onClick={() => onChange("memory")}

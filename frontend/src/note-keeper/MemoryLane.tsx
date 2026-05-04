@@ -100,7 +100,7 @@ export function MemoryLane({
         )}
       </header>
 
-      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-28 pt-1">
+      <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4 pt-1">
         {notes.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 12 }}

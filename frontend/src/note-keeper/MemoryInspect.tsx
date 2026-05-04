@@ -41,7 +41,7 @@ export function MemoryInspect({ note, onBack, onDelete }: MemoryInspectProps) {
         </button>
       </header>
 
-      <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-28 pt-2">
+      <div className="no-scrollbar flex-1 overflow-y-auto px-2 pb-4 pt-2">
         <div className="space-y-5">
           <section aria-labelledby="note-brief-heading">
             <h2 id="note-brief-heading" className="mb-2 px-1 font-mono text-[0.58rem] uppercase tracking-[0.16em] text-muted-foreground">
