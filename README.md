@@ -2,6 +2,27 @@
 
 Local voice notes with transcription, categorization, key notes, storage, and memory search. The UI is a Vite React app with shadcn-style components, lucide icons, and lightweight animations.
 
+## Screenshots
+
+Dark, mobile-first **Capture** tab: model status on top, large mic control, optional auto-stop after silence, and live browser speech preview while recording.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <b>Ready to record</b><br/>
+      <img src="docs/screenshots/capture-idle.png" alt="Capture tab idle — mic ready, models shown" width="320" />
+    </td>
+    <td align="center" width="50%">
+      <b>Recording + live preview</b><br/>
+      <img src="docs/screenshots/capture-recording.png" alt="Capture tab while listening — visualizer and preview" width="320" />
+    </td>
+  </tr>
+</table>
+
+<p align="center">
+  <sub>Uses <code>gemma2:2b</code> and <code>nomic-embed-text</code> (shown in-app). Three-tab shell: Notes, Capture, Ask.</sub>
+</p>
+
 ## Quick Start
 
 Requirements:
@@ -112,12 +133,12 @@ The app binds to `127.0.0.1` in Docker Compose. External access is disabled by d
 
 ## Models
 
-Defaults:
+Defaults (override in `.env` or Compose):
 
-- Whisper: `base.en`
+- Whisper: `small.en` (`WHISPER_MODEL`)
 - Chat: `gemma2:2b`
 - Embeddings: `nomic-embed-text`
 
-Change these in `.env` before starting the stack.
+Change these before starting the stack if you want different models.
 
 Only the web app is exposed to the host by default. Ollama, Qdrant, and Whisper stay on Docker's internal network to avoid local port conflicts.
