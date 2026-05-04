@@ -1,0 +1,11 @@
+.git
+.env
+__pycache__
+.pytest_cache
+.DS_Store
+data
+uploads
+*.sqlite3
+frontend/node_modules
+frontend/dist
+frontend/tsconfig.tsbuildinfo

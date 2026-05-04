@@ -1,0 +1,288 @@
+# How This AI Note Keeper Works
+
+This document explains the app in plain language. No AI background needed.
+
+## The Big Idea
+
+You talk into the browser. The app turns your voice into text, cleans it up, saves it, and lets you ask questions about what you saved before.
+
+Example:
+
+1. You say: "Store my office ID number as 12345."
+2. The app transcribes it into text.
+3. The app recognizes it as a personal ID-style note.
+4. The app saves it.
+5. Later you ask: "What is my office ID number?"
+6. The app searches old notes and answers from your saved memory.
+
+Everything runs locally in Docker. Your notes are not sent to OpenAI, Google, or any cloud AI service.
+
+## Main Pieces
+
+### Browser UI
+
+This is the page you open at:
+
+```text
+http://127.0.0.1:3000
+```
+
+It lets you:
+
+- record a note
+- ask a question
+- see stored notes
+- inspect summaries, key points, action items, and transcripts
+
+The frontend is built with React and Vite. React helps build the interactive screen. Vite builds the frontend files quickly.
+
+### Backend
+
+The backend is the coordinator.
+
+It receives audio from the browser, sends it to Whisper for transcription, sends text to Ollama for AI work, saves notes in SQLite, and stores searchable memory in Qdrant.
+
+The backend is written with FastAPI because it is simple, readable, and good for APIs.
+
+### Whisper
+
+Whisper is the speech-to-text part.
+
+It answers this question:
+
+```text
+What did the user say in the recording?
+```
+
+In this project, Whisper runs through `whisper.cpp` inside Docker.
+
+Why `whisper.cpp`?
+
+- It is lighter than running the full Python Whisper package.
+- It works well locally.
+- It can run without cloud services.
+- It is a good fit for a private local app.
+
+### Ollama
+
+Ollama runs local AI models.
+
+In this app, Ollama does two jobs:
+
+- chat/reasoning with `gemma2:2b`
+- embeddings with `nomic-embed-text`
+
+Think of Ollama as the local AI engine.
+
+### Chat Model
+
+The chat model is the model that reads text and writes useful text back.
+
+In this app, the chat model:
+
+- creates a title
+- summarizes the note
+- chooses a category
+- extracts key points
+- extracts action items
+- answers questions from stored notes
+
+Default model:
+
+```text
+gemma2:2b
+```
+
+Why this model?
+
+- It is small enough for local use.
+- It is good enough for note cleanup and simple reasoning.
+- It keeps the first version practical on a laptop.
+
+### Embedding Model
+
+An embedding model turns text into a list of numbers.
+
+That sounds strange, but the idea is simple:
+
+```text
+"My office ID is 12345" -> [0.12, -0.44, 0.91, ...]
+```
+
+Those numbers represent the meaning of the text.
+
+Texts with similar meaning get similar number patterns.
+
+Example:
+
+- "My office ID is 12345"
+- "I forgot my employee number"
+
+These do not use the same exact words, but they are related. Embeddings help the app understand that relationship.
+
+Why do we need embeddings?
+
+Normal search only matches words. If you search for "employee number", normal text search may miss a note that says "office ID".
+
+Embedding search is meaning-based. It can find notes that are conceptually related even when the words are different.
+
+Default embedding model:
+
+```text
+nomic-embed-text
+```
+
+Why this model?
+
+- It runs locally in Ollama.
+- It is made for turning text into searchable vectors.
+- It keeps the system Docker-friendly.
+
+### Vector Database
+
+A vector database stores embeddings and searches by meaning.
+
+This app uses Qdrant.
+
+Qdrant answers this question:
+
+```text
+Which old notes are closest in meaning to this new question?
+```
+
+Example:
+
+1. You ask: "What is my ID number?"
+2. The app turns that question into numbers using the embedding model.
+3. Qdrant compares those numbers against saved note numbers.
+4. Qdrant returns the most related notes.
+5. The chat model uses those notes to answer.
+
+Why Qdrant?
+
+- It is made for vector search.
+- It runs locally in Docker.
+- It is more appropriate than trying to build vector search ourselves.
+
+### SQLite
+
+SQLite stores the normal note data:
+
+- transcript
+- title
+- summary
+- category
+- key points
+- action items
+- created date
+
+Why SQLite?
+
+- It is simple.
+- It is built for local apps.
+- It does not need a separate database server.
+- It is enough for a single-user personal note keeper.
+
+SQLite stores the full note. Qdrant stores the meaning-search version.
+
+## What Happens When You Save A Voice Note
+
+Here is the full flow:
+
+1. Browser records audio.
+2. Browser uploads audio to the backend.
+3. Backend puts the job in a queue.
+4. Whisper turns audio into text.
+5. Ollama summarizes and categorizes the text.
+6. Ollama embedding model turns the note into numbers.
+7. SQLite saves the real note.
+8. Qdrant saves the vector for memory search.
+9. The UI shows the saved note.
+
+## What Happens When You Ask A Question
+
+Here is the full flow:
+
+1. You ask a question.
+2. Ollama embedding model turns the question into numbers.
+3. Qdrant finds related old notes.
+4. Backend loads those full notes from SQLite.
+5. Ollama chat model answers using those notes.
+6. UI shows the answer and the source notes.
+
+## Why There Is A Queue
+
+AI work can be heavy.
+
+Whisper and Ollama can both use a lot of CPU/RAM. If the app tried to process many recordings at once, your laptop could get slow.
+
+So the backend processes AI jobs one at a time.
+
+This is slower for bulk uploads, but better for a MacBook-style local app.
+
+## Why Docker
+
+Docker packages the app into services that are easier to run.
+
+Instead of manually installing Python packages, Qdrant, Ollama, and Whisper tools, you can run:
+
+```bash
+docker compose up --build
+```
+
+Docker starts the pieces together.
+
+The tradeoff:
+
+- easier setup
+- more disk usage
+- first boot takes longer because images and models download
+
+## Why Only The App Port Is Exposed
+
+Only this URL is exposed to your Mac:
+
+```text
+http://127.0.0.1:3000
+```
+
+Ollama, Qdrant, and Whisper stay inside Docker's private network.
+
+Why?
+
+- fewer port conflicts
+- smaller local attack surface
+- cleaner setup
+
+## What "Local Only" Means
+
+Local only means:
+
+- browser talks to your local backend
+- backend talks to local Docker services
+- AI models run locally
+- notes are stored locally
+
+It does not mean "zero resource usage." While Docker services are running, they use some memory and disk.
+
+## Important Limitation
+
+Whisper is inside Docker right now because that was the chosen setup.
+
+On Apple Silicon, Dockerized Whisper may not use the best Mac-native acceleration. It works, but native macOS Whisper could be faster later.
+
+For now, Docker keeps setup simpler.
+
+## Mental Model
+
+Think of the app like this:
+
+- Browser: microphone and screen
+- Backend: manager
+- Whisper: ears
+- Chat model: writer and reasoner
+- Embedding model: meaning converter
+- Qdrant: memory index
+- SQLite: notebook
+
+The backend ties them together.

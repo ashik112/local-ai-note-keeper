@@ -1,0 +1,133 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 240 22% 4%;
+  --foreground: 210 25% 96%;
+  --card: 240 18% 8%;
+  --card-foreground: 210 25% 96%;
+  --primary: 172 100% 48%;
+  --primary-foreground: 240 22% 6%;
+  --secondary: 240 14% 14%;
+  --secondary-foreground: 210 20% 92%;
+  --muted: 240 12% 12%;
+  --muted-foreground: 215 14% 58%;
+  --accent: 265 85% 62%;
+  --accent-foreground: 260 100% 98%;
+  --destructive: 350 89% 58%;
+  --destructive-foreground: 0 0% 100%;
+  --warning: 38 100% 58%;
+  --warning-foreground: 240 22% 8%;
+  --border: 240 12% 18%;
+  --input: 240 12% 16%;
+  --ring: 172 100% 48%;
+  --radius: 12px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: hsl(var(--background));
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  overscroll-behavior-y: none;
+  font-family: DM Sans, ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.pt-safe {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+
+.px-safe {
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Atmospheric layers */
+.app-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.app-canvas__mesh {
+  position: absolute;
+  inset: -40%;
+  opacity: 0.045;
+  background-image:
+    linear-gradient(hsl(var(--primary)) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: drift 48s linear infinite;
+}
+
+.app-canvas__bloom {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 90% 55% at 15% -10%, hsl(var(--accent) / 0.14), transparent 48%),
+    radial-gradient(ellipse 70% 50% at 95% 15%, hsl(var(--primary) / 0.12), transparent 42%),
+    radial-gradient(ellipse 55% 45% at 50% 105%, hsl(200 90% 45% / 0.08), transparent 46%);
+}
+
+.app-canvas__noise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+@keyframes drift {
+  0% {
+    transform: translate(0, 0);
+  }
+  100% {
+    transform: translate(-56px, -40px);
+  }
+}
+
+.font-display {
+  font-family: Syne, ui-sans-serif, system-ui, sans-serif;
+}

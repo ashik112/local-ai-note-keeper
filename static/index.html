@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Private AI Note Keeper</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Private AI Note Keeper</h1>
+        <p id="systemStatus">Checking local services...</p>
+      </div>
+      <button id="refreshNotesButton" class="secondary-button" type="button">Refresh</button>
+    </header>
+
+    <main class="layout">
+      <section class="workbench">
+        <div class="mode-switch" role="tablist" aria-label="Mode">
+          <button id="captureModeButton" class="active" type="button">Capture</button>
+          <button id="askModeButton" type="button">Ask</button>
+        </div>
+
+        <section class="panel">
+          <h2 id="modeTitle">Capture a note</h2>
+          <p id="modeHint">Record something to store, categorize, summarize, and remember.</p>
+
+          <div class="record-row">
+            <button id="recordButton" class="primary-button" type="button">Record</button>
+            <button id="stopButton" class="secondary-button" type="button" disabled>Stop</button>
+            <span id="recordingStatus">Idle</span>
+          </div>
+
+          <label class="field">
+            <span>Ask with text</span>
+            <textarea id="textQuestion" rows="4" placeholder="Example: I forgot my ID number."></textarea>
+          </label>
+          <button id="askTextButton" class="secondary-button" type="button">Ask Question</button>
+
+          <div id="resultBox" class="result-box" hidden></div>
+        </section>
+      </section>
+
+      <aside class="notes-panel">
+        <div class="notes-toolbar">
+          <h2>Stored notes</h2>
+          <select id="categoryFilter" aria-label="Category filter">
+            <option value="">All categories</option>
+            <option>Personal</option>
+            <option>Work</option>
+            <option>Project</option>
+            <option>Task</option>
+            <option>Credential or ID</option>
+            <option>Meeting</option>
+            <option>Journal</option>
+            <option>Idea</option>
+            <option>Finance</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <input id="noteSearch" class="search-input" type="search" placeholder="Search notes" />
+        <div id="notesList" class="notes-list"></div>
+      </aside>
+    </main>
+
+    <dialog id="noteDialog">
+      <form method="dialog" class="dialog-card">
+        <header>
+          <h2 id="dialogTitle"></h2>
+          <button type="submit" class="icon-button" aria-label="Close">×</button>
+        </header>
+        <p id="dialogMeta"></p>
+        <h3>Summary</h3>
+        <p id="dialogSummary"></p>
+        <h3>Key points</h3>
+        <ul id="dialogKeyPoints"></ul>
+        <h3>Action items</h3>
+        <ul id="dialogActionItems"></ul>
+        <h3>Transcript</h3>
+        <p id="dialogTranscript"></p>
+      </form>
+    </dialog>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

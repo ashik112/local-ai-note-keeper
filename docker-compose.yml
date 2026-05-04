@@ -1,0 +1,76 @@
+services:
+  app:
+    build: .
+    environment:
+      DATA_DIR: /app/data
+      UPLOAD_DIR: /app/uploads
+      OLLAMA_URL: http://ollama:11434
+      QDRANT_URL: http://qdrant:6333
+      WHISPER_URL: http://whisper:8080
+      LOCAL_ONLY: ${LOCAL_ONLY:-true}
+      EXTERNAL_ACCESS_ENABLED: ${EXTERNAL_ACCESS_ENABLED:-false}
+      HMAC_SECRET: ${HMAC_SECRET:-}
+      CHAT_MODEL: ${CHAT_MODEL:-gemma2:2b}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-notes}
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:8000"
+    volumes:
+      - app_data:/app/data
+      - uploads:/app/uploads
+    depends_on:
+      - qdrant
+      - ollama
+      - whisper
+
+  whisper:
+    build:
+      context: ./whisper
+    command: >
+      /bin/sh -lc "
+      test -f /models/ggml-${WHISPER_MODEL:-base.en}.bin ||
+      ./models/download-ggml-model.sh ${WHISPER_MODEL:-base.en} /models;
+      /opt/whisper.cpp/build/bin/whisper-server --host 0.0.0.0 --port 8080 --convert
+      -m /models/ggml-${WHISPER_MODEL:-base.en}.bin
+      "
+    volumes:
+      - whisper_models:/models
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-1m}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
+    volumes:
+      - ollama_models:/root/.ollama
+
+  ollama-setup:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      CHAT_MODEL: ${CHAT_MODEL:-gemma2:2b}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
+    entrypoint: /bin/sh
+    command: >
+      -lc "
+      until ollama list; do sleep 2; done;
+      ollama pull ${CHAT_MODEL:-gemma2:2b};
+      ollama pull ${EMBEDDING_MODEL:-nomic-embed-text}
+      "
+    depends_on:
+      - ollama
+    restart: "no"
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.6
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+volumes:
+  app_data:
+  uploads:
+  whisper_models:
+  ollama_models:
+  qdrant_data:
