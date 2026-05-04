@@ -18,7 +18,9 @@ frontend/.vite/
 *.tsbuildinfo
 
 # --- Python ---
+# Bytecode — if any .pyc slips into the repo, run: git rm -r --cached backend/**/__pycache__
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.egg-info/
