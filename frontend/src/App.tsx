@@ -12,7 +12,7 @@ import {
 import { FloatingDock } from "./note-keeper/FloatingDock";
 import { MemoryInspect } from "./note-keeper/MemoryInspect";
 import { MemoryLane } from "./note-keeper/MemoryLane";
-import type { AskResult, Job, Note, Shell } from "./note-keeper/types";
+import type { AskResult, Job, Mode, Note, Shell } from "./note-keeper/types";
 import { useSpeechPreview } from "./note-keeper/useSpeechPreview";
 
 export default function App() {
@@ -31,6 +31,7 @@ export default function App() {
   const [isWorking, setIsWorking] = useState(false);
   const [textPromptError, setTextPromptError] = useState("");
   const [silenceAutoStop, setSilenceAutoStop] = useState(readSilenceAutoStopPref);
+  const [captureFeedback, setCaptureFeedback] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -217,6 +218,7 @@ export default function App() {
       setActivity("Listening");
       setResult("");
       setSources([]);
+      setCaptureFeedback("");
     } catch (e) {
       recordingStreamRef.current = null;
       setActivity(e instanceof Error ? e.message : "Mic blocked");
@@ -237,12 +239,18 @@ export default function App() {
   }
 
   async function uploadRecording() {
+    const audioMode = assistantMode;
+
     setIsWorking(true);
     try {
       const audio = new Blob(audioChunksRef.current, { type: "audio/webm" });
       if (audio.size < 256) {
         setActivity("Failed");
-        setResult("Recording was too short or empty. Try again.");
+        if (audioMode === "capture") {
+          setCaptureFeedback("Recording was too short or empty. Try again.");
+        } else {
+          setResult("Recording was too short or empty. Try again.");
+        }
         browserDraftForUploadRef.current = "";
         return;
       }
@@ -253,30 +261,34 @@ export default function App() {
         form.append("browser_transcript", draft);
       }
       browserDraftForUploadRef.current = "";
-      const path = assistantMode === "capture" ? "/api/notes/audio" : "/api/ask/audio";
+      const path = audioMode === "capture" ? "/api/notes/audio" : "/api/ask/audio";
       const job = await postForm<{ job_id: string }>(path, form);
-      await watchJob(job.job_id);
+      await watchJob(job.job_id, audioMode);
     } catch (e) {
       setActivity("Failed");
-      setResult(e instanceof Error ? e.message : "Upload failed");
+      const msg = e instanceof Error ? e.message : "Upload failed";
+      if (audioMode === "capture") setCaptureFeedback(msg);
+      else setResult(msg);
     } finally {
       setIsWorking(false);
     }
   }
 
-  async function watchJob(jobId: string) {
+  async function watchJob(jobId: string, audioMode: Mode) {
     for (;;) {
       const job = await fetchJson<Job>(`/api/jobs/${jobId}`);
       setActivity(job.message);
 
       if (job.state === "failed") {
-        setResult(job.error ?? "Failed");
+        const msg = job.error ?? "Failed";
+        if (audioMode === "capture") setCaptureFeedback(msg);
+        else setResult(msg);
         return;
       }
 
       if (job.state === "stored") {
         if (job.result?.note) {
-          setResult(`${job.result.note.title}\n\n${job.result.note.summary}`);
+          setCaptureFeedback("");
           await loadNotes();
           setSelectedNote(job.result.note);
         } else if (job.result?.answer) {
@@ -381,6 +393,7 @@ export default function App() {
             >
               <AssistantDeck
                 mode={assistantMode}
+                captureFeedback={captureFeedback}
                 health={health}
                 isRecording={isRecording}
                 isWorking={isWorking}

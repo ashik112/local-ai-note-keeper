@@ -1,9 +1,10 @@
 import { motion } from "framer-motion";
-import { FileText, RefreshCcw, Search, Shield } from "lucide-react";
+import { ChevronDown, FileText, RefreshCcw, Search, Shield } from "lucide-react";
 
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select } from "../components/ui/select";
+import { cn } from "../lib/utils";
 import type { Note } from "./types";
 import { categories } from "./constants";
 import { getCategoryColor } from "./categoryColor";
@@ -65,19 +66,30 @@ export function MemoryLane({
             />
           </div>
 
-          <Select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            className="h-10 min-h-10 max-w-[42%] min-w-[7.25rem] shrink-0 rounded-full border-white/[0.07] bg-muted/45 py-0 pl-3 pr-9 font-sans text-[0.8125rem] leading-normal text-foreground shadow-none"
-            aria-label="Filter by category"
-          >
-            <option value="">All categories</option>
-            {categories.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </Select>
+          <div className="relative min-h-10 max-w-[42%] min-w-[7.25rem] shrink-0 [&:focus-within]:ring-2 [&:focus-within]:ring-ring [&:focus-within]:ring-offset-2 [&:focus-within]:ring-offset-background rounded-full">
+            <Select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              aria-label="Filter by category"
+              className={cn(
+                "h-10 min-h-10 w-full cursor-pointer rounded-full appearance-none border border-white/[0.07]",
+                "bg-muted/45 py-0 pl-3 pr-10 font-sans text-[0.8125rem] leading-normal text-foreground shadow-none",
+                "outline-none transition-[box-shadow,color] focus-visible:ring-0"
+              )}
+            >
+              <option value="">All categories</option>
+              {categories.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </Select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3 top-1/2 z-[1] h-4 w-4 shrink-0 -translate-y-1/2 text-muted-foreground"
+              aria-hidden
+              strokeWidth={2}
+            />
+          </div>
         </div>
 
         {offline && (

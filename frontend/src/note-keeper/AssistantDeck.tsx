@@ -12,6 +12,8 @@ import type { Mode, Note, SpeechPreviewState } from "./types";
 
 export type AssistantDeckProps = {
   mode: Mode;
+  /** Capture-tab errors only (short recording, pipeline failure). Ask tab uses `result`. */
+  captureFeedback: string;
   health: string;
   isRecording: boolean;
   isWorking: boolean;
@@ -88,6 +90,7 @@ function HealthPill({ health }: { health: string }) {
 export function AssistantDeck(props: AssistantDeckProps) {
   const {
     mode,
+    captureFeedback,
     health,
     isRecording,
     isWorking,
@@ -221,46 +224,13 @@ export function AssistantDeck(props: AssistantDeckProps) {
       {hero}
 
       <div className="shrink-0 space-y-2 px-1 pb-3">
+        {captureFeedback ? (
+          <p className="px-3 text-center text-[0.75rem] leading-snug text-destructive">{captureFeedback}</p>
+        ) : null}
         <p className="text-center text-[0.75rem] leading-snug text-muted-foreground">
           Voice saves new notes · Tap <span className="text-foreground/90">Ask</span> below to type questions against saved notes.
         </p>
       </div>
-
-      {result ? (
-        <div className="no-scrollbar mx-1 mb-2 max-h-[min(42vh,17rem)] min-h-0 shrink-0 overflow-y-auto rounded-xl border border-white/[0.1] bg-card/85 p-3.5 shadow-lg backdrop-blur-md sm:max-h-[min(44vh,19rem)]">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={result.slice(0, 48)}
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="space-y-3"
-            >
-              <div className="flex items-center gap-2 font-mono text-[0.58rem] uppercase tracking-[0.18em] text-primary">
-                <Sparkles className="h-3 w-3" />
-                Result
-              </div>
-              <p className="whitespace-pre-wrap text-[0.875rem] leading-relaxed text-foreground/95">{result}</p>
-              {sources.length > 0 && (
-                <div className="space-y-1.5 border-t border-border/60 pt-3">
-                  <p className="font-mono text-[0.58rem] uppercase tracking-[0.18em] text-muted-foreground">Sources</p>
-                  {sources.map((note) => (
-                    <button
-                      key={note.id}
-                      type="button"
-                      onClick={() => onPickSource(note)}
-                      className="flex w-full items-center gap-2 rounded-lg border border-border/55 bg-muted/25 px-2.5 py-2 text-left text-[0.8125rem] transition active:scale-[0.99]"
-                    >
-                      <span className="line-clamp-2 min-w-0 flex-1 font-medium leading-snug">{note.title}</span>
-                      <Tags className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      ) : null}
     </div>
   );
 }
