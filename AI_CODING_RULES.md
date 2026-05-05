@@ -49,7 +49,7 @@ Use these rules when changing this project later.
 ## Docker Rules
 
 - `docker compose up --build` must remain the main boot command.
-- Keep host ports bound to `127.0.0.1` unless external mode is intentionally added.
+- Default Compose maps the app to `APP_HOST_BIND` / `APP_PORT` (see `.env.example`; LAN bind is opt-out via `APP_HOST_BIND=127.0.0.1`).
 - Persist models and app data in Docker volumes.
 - Keep `.env.example` complete when adding settings.
 

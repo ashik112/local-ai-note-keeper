@@ -194,7 +194,7 @@ Use these backend endpoints:
 Keep the app local-only in v1, but include env placeholders for future signed requests:
 
 ```env
-EXTERNAL_ACCESS_ENABLED=false
+CORS_LAN_ORIGINS=false
 PUBLIC_BASE_URL=
 HMAC_SECRET=
 HMAC_HEADER_NAME=X-NoteKeeper-Signature
@@ -346,12 +346,12 @@ Required `.env.example` sections:
 Default local URLs:
 
 ```env
-APP_PORT=3000
+APP_PORT=8743
 BACKEND_PORT=8000
 OLLAMA_URL=http://ollama:11434
 QDRANT_URL=http://qdrant:6333
 WHISPER_URL=http://whisper:8080
-LOCAL_ONLY=true
+APP_HOST_BIND=0.0.0.0
 ```
 
 ## UI Plan
@@ -401,7 +401,6 @@ V1 default:
 
 Future external mode:
 
-- require `EXTERNAL_ACCESS_ENABLED=true`
 - require `HMAC_SECRET`
 - reject unsigned mutating requests
 - recommend Cloudflare Access or another identity layer before public exposure

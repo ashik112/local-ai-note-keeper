@@ -38,7 +38,7 @@ docker compose up --build
 Open:
 
 ```text
-http://127.0.0.1:3000
+http://127.0.0.1:8743
 ```
 
 First boot builds `whisper.cpp`, then downloads the Whisper, chat, and embedding models into Docker volumes. That can take a while.
@@ -56,7 +56,7 @@ docker compose up -d
 Open the UI:
 
 ```text
-http://127.0.0.1:3000
+http://127.0.0.1:8743
 ```
 
 Stop the app:
@@ -84,7 +84,7 @@ docker compose ps
 Check the backend health:
 
 ```bash
-curl http://127.0.0.1:3000/api/health
+curl http://127.0.0.1:8743/api/health
 ```
 
 Rebuild only the app after code changes:
@@ -110,7 +110,7 @@ npm install
 npm run dev
 ```
 
-The Vite dev server proxies `/api` to the Docker app on `http://127.0.0.1:3000`.
+The Vite dev server proxies `/api` to the Docker app on `http://127.0.0.1:8743` (change `APP_PORT` in `.env` if you use another host port, and point the proxy at the same port).
 
 ## What It Does
 
@@ -127,9 +127,17 @@ For a beginner-friendly explanation of these pieces, read:
 docs/how-it-works-for-beginners.md
 ```
 
-## Local-Only Default
+## Network access (LAN and router)
 
-The app binds to `127.0.0.1` in Docker Compose. External access is disabled by default. HMAC env values are present in `.env.example` for a later external mode, but v1 is designed for local use.
+By default Compose maps **`0.0.0.0:8743`** → the app (container port **8000**), so other devices on your LAN can open `http://<this-machine-ip>:8743`. The host port is **`APP_PORT`** (default **8743**); change it in `.env` if that port is taken.
+
+- **Router port forwarding:** forward your chosen **WAN TCP port** to this machine’s **LAN IP** and **`APP_PORT`** (e.g. 8743). Use only on networks you trust; this stack is not hardened for the public internet.
+- **CORS:** Browsing the UI from a **LAN IP** + port works same-origin. For split dev (e.g. Vite vs API origins), set **`CORS_LAN_ORIGINS=true`** to allow RFC1918 origins on `PUBLIC_APP_PORT`, or set **`CORS_ORIGINS`** explicitly (see `.env.example`).
+- **Localhost-only again:** set **`APP_HOST_BIND=127.0.0.1`** in `.env`.
+
+## Local-only and exposure
+
+The process still listens on **all interfaces inside the container** (`0.0.0.0:8000`). Whether the **host** accepts remote connections is controlled by **`APP_HOST_BIND`** (default **`0.0.0.0`** for LAN reachability). Tighten it to **`127.0.0.1`** if you only want this machine. HMAC-related env vars in `.env.example` are reserved for future hardening.
 
 ## Models
 
@@ -141,4 +149,4 @@ Defaults (override in `.env` or Compose):
 
 Change these before starting the stack if you want different models.
 
-Only the web app is exposed to the host by default. Ollama, Qdrant, and Whisper stay on Docker's internal network to avoid local port conflicts.
+Only the **Note Keeper** service is published on the host (`APP_HOST_BIND` / `APP_PORT`). Ollama, Qdrant, and Whisper stay on Docker’s internal network unless you change Compose.

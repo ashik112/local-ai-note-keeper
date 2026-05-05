@@ -7,16 +7,17 @@ services:
       OLLAMA_URL: http://ollama:11434
       QDRANT_URL: http://qdrant:6333
       WHISPER_URL: http://whisper:8080
-      LOCAL_ONLY: ${LOCAL_ONLY:-true}
-      EXTERNAL_ACCESS_ENABLED: ${EXTERNAL_ACCESS_ENABLED:-false}
+      CORS_LAN_ORIGINS: ${CORS_LAN_ORIGINS:-}
+      EXTERNAL_ACCESS_ENABLED: ${EXTERNAL_ACCESS_ENABLED:-}
       HMAC_SECRET: ${HMAC_SECRET:-}
       CHAT_MODEL: ${CHAT_MODEL:-gemma2:2b}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-nomic-embed-text}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-10m}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-notes}
+      PUBLIC_APP_PORT: ${APP_PORT:-8743}
     ports:
-      - "127.0.0.1:${APP_PORT:-3000}:8000"
+      - "${APP_HOST_BIND:-0.0.0.0}:${APP_PORT:-8743}:8000"
     volumes:
       - app_data:/app/data
       - uploads:/app/uploads

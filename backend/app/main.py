@@ -25,18 +25,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors_kwargs: dict[str, Any] = {
+    "allow_origins": settings.cors_origins,
+    "allow_credentials": True,
+    "allow_methods": ["*"],
+    "allow_headers": ["*"],
+}
+if settings.cors_origin_regex:
+    _cors_kwargs["allow_origin_regex"] = settings.cors_origin_regex
+
+app.add_middleware(CORSMiddleware, **_cors_kwargs)
 
 
 class AskRequest(BaseModel):
@@ -61,10 +59,9 @@ class NoteUpdate(BaseModel):
 async def health() -> dict[str, Any]:
     return {
         "ok": True,
-        "local_only": settings.local_only,
-        "external_access_enabled": settings.external_access_enabled,
         "chat_model": settings.chat_model,
         "embedding_model": settings.embedding_model,
+        "cors_lan_origins": settings.cors_lan_origins,
     }
 
 
