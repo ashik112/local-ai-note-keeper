@@ -48,7 +48,7 @@ Use these rules when changing this project later.
 
 ## Docker Rules
 
-- `docker compose up --build` must remain the main boot command.
+- `make up-build` (or equivalently `docker compose up --build`) must remain a supported first-boot path for the stack.
 - Default Compose maps the app to `APP_HOST_BIND` / `APP_PORT` (see `.env.example`; LAN bind is opt-out via `APP_HOST_BIND=127.0.0.1`).
 - Persist models and app data in Docker volumes.
 - Keep `.env.example` complete when adding settings.

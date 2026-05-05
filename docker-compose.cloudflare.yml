@@ -1,0 +1,30 @@
+# Optional Cloudflare Tunnel sidecars — NOT part of the default stack.
+#
+# Root compose stays vendor-neutral. Opt in when you choose this ingress:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile tunnel-quick up -d
+#   docker compose -f docker-compose.yml -f docker-compose.cloudflare.yml --profile tunnel up -d
+#
+# Requires CLOUDFLARE_TUNNEL_TOKEN in .env for profile "tunnel" only (named tunnel).
+# Do not combine profiles "tunnel" and "tunnel-quick" at once.
+
+services:
+  cloudflared:
+    profiles:
+      - tunnel
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+  cloudflared-quick:
+    profiles:
+      - tunnel-quick
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url http://app:8000
+    depends_on:
+      - app
