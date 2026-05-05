@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -43,6 +44,19 @@ def prepare_database() -> None:
                 question TEXT NOT NULL,
                 answer TEXT NOT NULL,
                 source_note_ids_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL UNIQUE,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                body TEXT,
+                read INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL
             )
             """
@@ -205,6 +219,60 @@ def save_question(question_id: str, question: str, answer: str, source_note_ids:
             """,
             (question_id, question, answer, to_json(source_note_ids), now_iso()),
         )
+        db.commit()
+
+
+def insert_job_notification(job_id_str: str, kind: str, title: str, body: str | None) -> str | None:
+    """One row per job_id. Returns new id when inserted, None if duplicate job_id."""
+    nid = str(uuid.uuid4())
+    timestamp = now_iso()
+    body_s = body if body is not None else ""
+    try:
+        with connect() as db:
+            db.execute(
+                """
+                INSERT INTO notifications (id, job_id, kind, title, body, read, created_at)
+                VALUES (?, ?, ?, ?, ?, 0, ?)
+                """,
+                (nid, job_id_str, kind, title, body_s, timestamp),
+            )
+            db.commit()
+    except sqlite3.IntegrityError:
+        return None
+    return nid
+
+
+def list_notifications(limit: int = 30, unread_only: bool = False) -> list[dict[str, Any]]:
+    sql = "SELECT id, job_id, kind, title, body, read, created_at FROM notifications"
+    params: list[Any] = []
+    if unread_only:
+        sql += " WHERE read = 0"
+    sql += " ORDER BY datetime(created_at) DESC LIMIT ?"
+    params.append(limit)
+    with connect() as db:
+        rows = db.execute(sql, params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def unread_notification_count() -> int:
+    with connect() as db:
+        row = db.execute("SELECT COUNT(*) AS n FROM notifications WHERE read = 0").fetchone()
+        return int(row["n"]) if row else 0
+
+
+def mark_notification_read(notification_id: str) -> bool:
+    with connect() as db:
+        cur = db.execute(
+            "UPDATE notifications SET read = 1 WHERE id = ? AND read = 0",
+            (notification_id,),
+        )
+        db.commit()
+        return cur.rowcount > 0
+
+
+def mark_all_notifications_read() -> None:
+    with connect() as db:
+        db.execute("UPDATE notifications SET read = 1 WHERE read = 0")
         db.commit()
 
 

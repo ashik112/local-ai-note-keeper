@@ -2,7 +2,14 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AssistantDeck } from "./note-keeper/AssistantDeck";
-import { fetchJson, postForm, postJson, wait } from "./note-keeper/api";
+import {
+  fetchJson,
+  postEmpty,
+  postForm,
+  postJson,
+  waitWithAbort,
+  watchJobViaWebSocket
+} from "./note-keeper/api";
 import {
   STORAGE_SILENCE_AUTO_STOP,
   readSilenceAutoStopPref,
@@ -12,7 +19,7 @@ import {
 import { FloatingDock } from "./note-keeper/FloatingDock";
 import { MemoryInspect } from "./note-keeper/MemoryInspect";
 import { MemoryLane } from "./note-keeper/MemoryLane";
-import type { AskResult, Job, Mode, Note, Shell } from "./note-keeper/types";
+import type { AppNotification, AskResult, Job, Mode, Note, Shell } from "./note-keeper/types";
 import { useSpeechPreview } from "./note-keeper/useSpeechPreview";
 
 export default function App() {
@@ -32,6 +39,9 @@ export default function App() {
   const [textPromptError, setTextPromptError] = useState("");
   const [silenceAutoStop, setSilenceAutoStop] = useState(readSilenceAutoStopPref);
   const [captureFeedback, setCaptureFeedback] = useState("");
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [topUnread, setTopUnread] = useState<AppNotification | null>(null);
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStreamRef = useRef<MediaStream | null>(null);
@@ -44,6 +54,8 @@ export default function App() {
   const { liveTranscript, speechPreviewState, startSpeechPreview, stopSpeechPreview, resetTranscript, peekBrowserTranscript } =
     useSpeechPreview();
   const browserDraftForUploadRef = useRef("");
+  const desktopNotifySeenRef = useRef<Set<string>>(new Set());
+  const jobWatchAbortRef = useRef<AbortController | null>(null);
 
   const stats = useMemo(() => {
     const sensitive = notes.filter((n) => n.sensitivity !== "normal").length;
@@ -56,6 +68,15 @@ export default function App() {
   useEffect(() => {
     void checkHealth();
     void loadNotes();
+    void refreshNotifications();
+  }, []);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") void refreshNotifications();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
   useEffect(() => {
@@ -87,6 +108,13 @@ export default function App() {
       stopSilenceMonitor();
     };
   }, [isRecording, silenceAutoStop]);
+
+  useEffect(() => {
+    return () => {
+      jobWatchAbortRef.current?.abort();
+      jobWatchAbortRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -180,6 +208,102 @@ export default function App() {
     });
   }
 
+  async function refreshNotifications() {
+    try {
+      const qs = new URLSearchParams({ unread_only: "true", limit: "8" });
+      const data = await fetchJson<{ notifications: AppNotification[]; unread_count: number }>(
+        `/api/notifications?${qs.toString()}`
+      );
+      setUnreadNotifications(data.unread_count);
+      setTopUnread(data.notifications[0] ?? null);
+    } catch {
+      /* offline / warm-up */
+    }
+  }
+
+  async function dismissNotificationBanner() {
+    try {
+      await postEmpty("/api/notifications/read-all");
+      await refreshNotifications();
+    } catch {
+      /* noop */
+    }
+  }
+
+  function desktopNotifyTerminal(job: Job, audioMode: Mode) {
+    if (!job.terminal) return;
+    const key = `${job.id}:${job.state}`;
+    if (desktopNotifySeenRef.current.has(key)) return;
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+    if (document.visibilityState === "visible") return;
+
+    desktopNotifySeenRef.current.add(key);
+    let title =
+      job.state === "failed" ? "Something went wrong" : audioMode === "capture" ? "Note ready" : "Answer ready";
+    let body =
+      job.state === "failed"
+        ? (job.error ?? "Job failed.")
+        : (job.result?.note?.title ?? job.result?.answer?.slice(0, 140) ?? job.message ?? "Done");
+
+    try {
+      new Notification(title, { body, tag: job.id });
+    } catch {
+      /* strict environments */
+    }
+  }
+
+  function handleJobWire(job: Job, audioMode: Mode) {
+    setActivity(job.message);
+
+    if (!job.terminal) return;
+
+    if (job.state === "failed") {
+      const msg = job.error ?? "Failed";
+      if (audioMode === "capture") setCaptureFeedback(msg);
+      else setResult(msg);
+      desktopNotifyTerminal(job, audioMode);
+      void refreshNotifications();
+      return;
+    }
+
+    if (job.state === "stored") {
+      if (job.result?.note) {
+        setCaptureFeedback("");
+        void loadNotes();
+        setSelectedNote(job.result.note);
+        desktopNotifyTerminal(job, audioMode);
+      } else if (job.result?.answer) {
+        setResult(job.result.answer);
+        setSources(job.result.sources ?? []);
+        desktopNotifyTerminal(job, audioMode);
+      }
+      void refreshNotifications();
+    }
+  }
+
+  async function watchJobPolling(jobId: string, audioMode: Mode, signal?: AbortSignal) {
+    const url = `/api/jobs/${encodeURIComponent(jobId)}`;
+    for (;;) {
+      if (signal?.aborted) {
+        throw new DOMException("Aborted", "AbortError");
+      }
+      const job = await fetchJson<Job>(url, { signal });
+      handleJobWire(job, audioMode);
+      if (job.terminal) break;
+      await waitWithAbort(900, signal);
+    }
+  }
+
+  async function watchJob(jobId: string, audioMode: Mode, signal?: AbortSignal) {
+    const onUpdate = (job: Job) => handleJobWire(job, audioMode);
+    try {
+      await watchJobViaWebSocket(jobId, onUpdate, { signal });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw e;
+      await watchJobPolling(jobId, audioMode, signal);
+    }
+  }
+
   function openNote(note: Note) {
     setSelectedNote(note);
     setDetailOpen(true);
@@ -242,6 +366,9 @@ export default function App() {
     const audioMode = assistantMode;
 
     setIsWorking(true);
+    jobWatchAbortRef.current?.abort();
+    const watchController = new AbortController();
+    jobWatchAbortRef.current = watchController;
     try {
       const audio = new Blob(audioChunksRef.current, { type: "audio/webm" });
       if (audio.size < 256) {
@@ -263,42 +390,21 @@ export default function App() {
       browserDraftForUploadRef.current = "";
       const path = audioMode === "capture" ? "/api/notes/audio" : "/api/ask/audio";
       const job = await postForm<{ job_id: string }>(path, form);
-      await watchJob(job.job_id, audioMode);
+      await watchJob(job.job_id, audioMode, watchController.signal);
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setActivity("Idle");
+        return;
+      }
       setActivity("Failed");
       const msg = e instanceof Error ? e.message : "Upload failed";
       if (audioMode === "capture") setCaptureFeedback(msg);
       else setResult(msg);
     } finally {
+      if (jobWatchAbortRef.current === watchController) {
+        jobWatchAbortRef.current = null;
+      }
       setIsWorking(false);
-    }
-  }
-
-  async function watchJob(jobId: string, audioMode: Mode) {
-    for (;;) {
-      const job = await fetchJson<Job>(`/api/jobs/${jobId}`);
-      setActivity(job.message);
-
-      if (job.state === "failed") {
-        const msg = job.error ?? "Failed";
-        if (audioMode === "capture") setCaptureFeedback(msg);
-        else setResult(msg);
-        return;
-      }
-
-      if (job.state === "stored") {
-        if (job.result?.note) {
-          setCaptureFeedback("");
-          await loadNotes();
-          setSelectedNote(job.result.note);
-        } else if (job.result?.answer) {
-          setResult(job.result.answer);
-          setSources(job.result.sources ?? []);
-        }
-        return;
-      }
-
-      await wait(900);
     }
   }
 
@@ -423,7 +529,39 @@ export default function App() {
           </AnimatePresence>
         </div>
 
-        {!navHidden && <FloatingDock shell={shell} onChange={setShell} />}
+        {unreadNotifications > 0 && topUnread != null && (
+          <div className="relative z-40 shrink-0 border-t border-white/[0.07] bg-slate-950/80 px-3 py-2.5 backdrop-blur-xl">
+            <div className="flex flex-col gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  Activity {unreadNotifications > 1 ? `· ${unreadNotifications} new` : ""}
+                </p>
+                <p className="truncate text-sm font-medium text-slate-100">{topUnread.title}</p>
+                {topUnread.body ? <p className="line-clamp-2 text-xs text-slate-400">{topUnread.body}</p> : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="rounded-full bg-sky-500/25 px-3 py-1.5 text-xs font-medium text-sky-100 ring-1 ring-sky-400/35"
+                  onClick={() => void dismissNotificationBanner()}
+                >
+                  Dismiss all
+                </button>
+                {typeof Notification !== "undefined" && Notification.permission === "default" ? (
+                  <button
+                    type="button"
+                    className="rounded-full bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-300 ring-1 ring-white/10"
+                    onClick={() => void Notification.requestPermission()}
+                  >
+                    Enable alerts
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!navHidden && <FloatingDock shell={shell} onChange={setShell} unreadCount={unreadNotifications} />}
       </div>
     </div>
   );

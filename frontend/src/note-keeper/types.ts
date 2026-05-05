@@ -79,6 +79,16 @@ export type AskResult = {
   sources: Note[];
 };
 
+export type AppNotification = {
+  id: string;
+  job_id: string;
+  kind: string;
+  title: string;
+  body: string;
+  read: number;
+  created_at: string;
+};
+
 export type Job = {
   id: string;
   kind: string;
@@ -86,4 +96,6 @@ export type Job = {
   message: string;
   result?: { note?: Note } & Partial<AskResult>;
   error?: string;
+  /** Present on WebSocket and GET /api/jobs payloads */
+  terminal?: boolean;
 };

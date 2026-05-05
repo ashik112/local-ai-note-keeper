@@ -4,7 +4,15 @@ import type { ReactNode } from "react";
 
 import type { Shell } from "./types";
 
-export function FloatingDock({ shell, onChange }: { shell: Shell; onChange: (s: Shell) => void }) {
+export function FloatingDock({
+  shell,
+  onChange,
+  unreadCount = 0
+}: {
+  shell: Shell;
+  onChange: (s: Shell) => void;
+  unreadCount?: number;
+}) {
   return (
     <nav className="relative z-40 shrink-0 px-safe pb-safe pt-2">
       <div className="grid w-full grid-cols-3 gap-1 rounded-[1.5rem] border border-white/[0.07] bg-slate-950/55 p-1.5 shadow-[0_-12px_40px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.05)] backdrop-blur-2xl">
@@ -13,6 +21,7 @@ export function FloatingDock({ shell, onChange }: { shell: Shell; onChange: (s: 
           onClick={() => onChange("memory")}
           layoutId="tab-notes"
           accent="sky"
+          badgeCount={unreadCount > 0 ? unreadCount : undefined}
           icon={<FileText className="h-[1.125rem] w-[1.125rem] sm:h-5 sm:w-5" />}
           label="Notes"
         />
@@ -67,7 +76,8 @@ function DockSlot({
   icon,
   label,
   layoutId,
-  accent
+  accent,
+  badgeCount
 }: {
   active: boolean;
   onClick: () => void;
@@ -75,6 +85,7 @@ function DockSlot({
   label: string;
   layoutId: string;
   accent: keyof typeof dockAccent;
+  badgeCount?: number;
 }) {
   const p = dockAccent[accent];
 
@@ -86,6 +97,14 @@ function DockSlot({
         active ? "text-white" : "text-muted-foreground/75 hover:text-muted-foreground"
       }`}
     >
+      {badgeCount != null && badgeCount > 0 && (
+        <span
+          className="pointer-events-none absolute right-1.5 top-0.5 z-[4] flex min-w-[1rem] items-center justify-center rounded-full bg-destructive px-[5px] py-0.5 font-mono text-[0.5rem] font-bold leading-none text-white shadow-sm"
+          aria-label={`${badgeCount} unread`}
+        >
+          {badgeCount > 9 ? "9+" : badgeCount}
+        </span>
+      )}
       {active && (
         <>
           <motion.span

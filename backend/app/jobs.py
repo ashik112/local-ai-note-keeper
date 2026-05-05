@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -26,6 +27,83 @@ class JobQueue:
         self.jobs: dict[str, Job] = {}
         self.queue: asyncio.Queue[str] = asyncio.Queue()
         self.worker_started = False
+        self._job_subscribers: defaultdict[str, set[asyncio.Queue[dict[str, Any]]]] = defaultdict(set)
+
+    def snapshot(self, job: Job) -> dict[str, Any]:
+        terminal = job.state in ("stored", "failed")
+        return {
+            "id": job.id,
+            "kind": job.kind,
+            "state": job.state,
+            "message": job.message,
+            "result": job.result,
+            "error": job.error,
+            "terminal": terminal,
+        }
+
+    def subscribe_job(self, job_id: str) -> asyncio.Queue[dict[str, Any]]:
+        q: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=64)
+        self._job_subscribers[job_id].add(q)
+        return q
+
+    def unsubscribe_job(self, job_id: str, q: asyncio.Queue[dict[str, Any]]) -> None:
+        subs = self._job_subscribers.get(job_id)
+        if subs:
+            subs.discard(q)
+            if not subs:
+                del self._job_subscribers[job_id]
+
+    async def broadcast_job(self, job: Job) -> None:
+        snap = self.snapshot(job)
+        pending = [
+            asyncio.create_task(sub.put(dict(snap)))
+            for sub in list(self._job_subscribers.get(job.id, set()))
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        if job.state in ("stored", "failed"):
+            self._persist_terminal_notification(job)
+
+    async def set_job_progress(
+        self, job: Job, state: JobState | None = None, message: str | None = None
+    ) -> None:
+        if state is not None:
+            job.state = state
+        if message is not None:
+            job.message = message
+        await self.broadcast_job(job)
+
+    def _persist_terminal_notification(self, job: Job) -> None:
+        try:
+            if job.state == "failed":
+                database.insert_job_notification(
+                    job.id,
+                    "failed",
+                    "Job failed",
+                    job.error or "Unknown error",
+                )
+                return
+            result = job.result or {}
+            note = result.get("note")
+            if isinstance(note, dict):
+                title = str(note.get("title") or "Note saved")
+                summary = str(note.get("summary") or "").strip()
+                excerpt = summary[:400] + ("…" if len(summary) > 400 else "")
+                database.insert_job_notification(job.id, "note_saved", title, excerpt or None)
+                return
+            answer = result.get("answer")
+            if answer:
+                question = str(result.get("question") or "").strip()
+                excerpt = str(answer).strip()
+                excerpt = excerpt[:400] + ("…" if len(excerpt) > 400 else "")
+                line = (
+                    (f"{question}: {excerpt}" if question else excerpt) if excerpt else None
+                )
+                database.insert_job_notification(job.id, "answer_ready", "Answer ready", line)
+        except Exception:
+            # Persistence must never break the worker path
+            return
 
     def start(self) -> None:
         if not self.worker_started:
@@ -40,6 +118,7 @@ class JobQueue:
         )
         self.jobs[job.id] = job
         await self.queue.put(job.id)
+        await self.broadcast_job(job)
         return job
 
     async def add_ask_audio(self, path: str, filename: str, browser_transcript: str = "") -> Job:
@@ -50,20 +129,20 @@ class JobQueue:
         )
         self.jobs[job.id] = job
         await self.queue.put(job.id)
+        await self.broadcast_job(job)
         return job
 
     async def add_capture_text(self, transcript: str) -> Job:
         job = Job(id=str(uuid.uuid4()), kind="capture_text", payload={"transcript": transcript})
         self.jobs[job.id] = job
         await self.queue.put(job.id)
+        await self.broadcast_job(job)
         return job
 
     def get(self, job_id: str) -> Job | None:
         return self.jobs.get(job_id)
 
     async def _worker(self) -> None:
-        # One worker is intentional for v1. It prevents Whisper and the LLM from
-        # competing for laptop resources across several recordings at once.
         while True:
             job_id = await self.queue.get()
             job = self.jobs[job_id]
@@ -78,6 +157,7 @@ class JobQueue:
                 job.state = "failed"
                 job.message = "Failed"
                 job.error = str(exc)
+                await self.broadcast_job(job)
             finally:
                 self.queue.task_done()
 
@@ -94,8 +174,7 @@ class JobQueue:
         if len(browser_hint) >= 12:
             transcript = browser_hint
         else:
-            job.state = "transcribing"
-            job.message = "Transcribing audio"
+            await self.set_job_progress(job, "transcribing", "Transcribing audio")
             whisper_text = await ai.transcribe_audio(str(path), job.payload["filename"])
             if not whisper_text:
                 raise ValueError("Whisper returned an empty transcript.")
@@ -122,27 +201,24 @@ class JobQueue:
         if len(browser_hint) >= 8:
             question = browser_hint
         else:
-            job.state = "transcribing"
-            job.message = "Transcribing question"
+            await self.set_job_progress(job, "transcribing", "Transcribing question")
             whisper_q = await ai.transcribe_audio(str(path), job.payload["filename"])
             if not whisper_q:
                 raise ValueError("Whisper returned an empty question.")
             question = whisper_q
 
-        job.state = "answering"
-        job.message = "Searching memory"
+        await self.set_job_progress(job, "answering", "Searching memory")
         result = await answer_question(question)
         job.state = "stored"
         job.message = "Answered"
         job.result = result
+        await self.broadcast_job(job)
 
     async def _analyze_and_store_note(self, job: Job, transcript: str, audio_filename: str | None) -> None:
-        job.state = "analyzing"
-        job.message = "Creating note"
+        await self.set_job_progress(job, "analyzing", "Creating note")
         details = await ai.analyze_note(transcript)
 
-        job.state = "embedding"
-        job.message = "Saving memory"
+        await self.set_job_progress(job, "embedding", "Saving memory")
         note_id = str(uuid.uuid4())
         vector_id = str(uuid.uuid4())
         note = {
@@ -170,6 +246,7 @@ class JobQueue:
         job.state = "stored"
         job.message = "Saved"
         job.result = {"note": saved_note}
+        await self.broadcast_job(job)
 
 
 async def answer_question(question: str) -> dict[str, Any]:

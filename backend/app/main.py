@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -27,7 +27,12 @@ app = FastAPI(title=settings.app_name, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,14 +110,50 @@ async def get_job(job_id: str) -> dict[str, Any]:
     job = jobs.jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found.")
+    return jobs.jobs.snapshot(job)
+
+
+@app.websocket("/api/jobs/{job_id}/watch")
+async def watch_job_socket(ws: WebSocket, job_id: str) -> None:
+    await ws.accept()
+    job = jobs.jobs.get(job_id)
+    if job is None:
+        await ws.close(code=4404)
+        return
+    q = jobs.jobs.subscribe_job(job_id)
+    try:
+        await ws.send_json(jobs.jobs.snapshot(job))
+        while True:
+            payload = await q.get()
+            await ws.send_json(payload)
+            if payload.get("terminal"):
+                break
+    except WebSocketDisconnect:
+        pass
+    finally:
+        jobs.jobs.unsubscribe_job(job_id, q)
+
+
+@app.get("/api/notifications")
+async def list_notifications_route(unread_only: bool = False, limit: int = 30) -> dict[str, Any]:
+    capped = max(1, min(limit, 100))
     return {
-        "id": job.id,
-        "kind": job.kind,
-        "state": job.state,
-        "message": job.message,
-        "result": job.result,
-        "error": job.error,
+        "notifications": database.list_notifications(limit=capped, unread_only=unread_only),
+        "unread_count": database.unread_notification_count(),
     }
+
+
+@app.post("/api/notifications/read-all")
+async def notifications_read_all() -> dict[str, bool]:
+    database.mark_all_notifications_read()
+    return {"ok": True}
+
+
+@app.post("/api/notifications/{notification_id}/read")
+async def notification_read(notification_id: str) -> dict[str, bool]:
+    if not database.mark_notification_read(notification_id):
+        raise HTTPException(status_code=404, detail="Notification not found.")
+    return {"ok": True}
 
 
 @app.get("/api/notes")
