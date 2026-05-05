@@ -11,6 +11,7 @@ import {
   watchJobViaWebSocket
 } from "./note-keeper/api";
 import {
+  MIC_REQUIRES_HTTPS_MESSAGE,
   STORAGE_SILENCE_AUTO_STOP,
   readSilenceAutoStopPref,
   SILENCE_AUTO_STOP_MS,
@@ -315,6 +316,15 @@ export default function App() {
 
   async function startRecording() {
     try {
+      if (typeof window !== "undefined" && !window.isSecureContext) {
+        setActivity("Mic blocked");
+        if (assistantMode === "capture") {
+          setCaptureFeedback(MIC_REQUIRES_HTTPS_MESSAGE);
+        } else {
+          setResult(MIC_REQUIRES_HTTPS_MESSAGE);
+        }
+        return;
+      }
       resetTranscript();
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recordingStreamRef.current = stream;

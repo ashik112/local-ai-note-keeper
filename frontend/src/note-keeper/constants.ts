@@ -25,6 +25,10 @@ export function readSilenceAutoStopPref(): boolean {
   }
 }
 
+/** Browsers deny getUserMedia on http:// unless the host is localhost/127.0.0.1 (secure-context rules). */
+export const MIC_REQUIRES_HTTPS_MESSAGE =
+  "The microphone needs a secure page (HTTPS). Browsers block it on plain HTTP when you open the app by LAN or public IP. Put the site behind HTTPS (for example Caddy or nginx with a certificate) or use a tunnel such as Cloudflare Tunnel. Typed notes and Ask still work.";
+
 /** Wall-clock silence after speech before auto-stop (same as manual stop). */
 export const SILENCE_AUTO_STOP_MS = 5000;
 /** Normalized RMS — below this counts as silence once speech was detected */

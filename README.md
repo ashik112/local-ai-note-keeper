@@ -135,6 +135,17 @@ By default Compose maps **`0.0.0.0:8743`** → the app (container port **8000**)
 - **CORS:** Browsing the UI from a **LAN IP** + port works same-origin. For split dev (e.g. Vite vs API origins), set **`CORS_LAN_ORIGINS=true`** to allow RFC1918 origins on `PUBLIC_APP_PORT`, or set **`CORS_ORIGINS`** explicitly (see `.env.example`).
 - **Localhost-only again:** set **`APP_HOST_BIND=127.0.0.1`** in `.env`.
 
+### Microphone from LAN or internet
+
+Browsers allow the **microphone only in a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)**. That includes **`https://`** origins and **`http://localhost`** / **`http://127.0.0.1`** — **not** plain **`http://`** with a LAN IP or public hostname, so **`http://203.0.113.50:8743` will not get mic permission**.
+
+To capture audio remotely you need **`https://`** in front of the stack, for example:
+
+- **TLS reverse proxy:** Caddy or nginx on **443** with a certificate, proxying to **`APP_PORT`**. Automated certs (Let’s Encrypt) normally require a **domain** pointed at your home network.
+- **[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)** (or a similar HTTPS tunnel): you get **`https://…`** without punching a WAN hole to plain HTTP **8743**; TLS ends at Cloudflare while the tunnel reaches your local app.
+
+Typing notes, uploads, Ask, WebSockets, and notifications still work over HTTP where the backend allows it; **only in-browser microphone capture requires HTTPS** (unless the user stays on localhost).
+
 ## Local-only and exposure
 
 The process still listens on **all interfaces inside the container** (`0.0.0.0:8000`). Whether the **host** accepts remote connections is controlled by **`APP_HOST_BIND`** (default **`0.0.0.0`** for LAN reachability). Tighten it to **`127.0.0.1`** if you only want this machine. HMAC-related env vars in `.env.example` are reserved for future hardening.
